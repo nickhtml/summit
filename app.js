@@ -1,22 +1,29 @@
 mapboxgl.accessToken = "pk.eyJ1Ijoib2tkZW1zIiwiYSI6ImNtbTl1b3FhdzA3M2UycHBvZmZxYzRmYXgifQ.MGb9x34kBeR0lDV8FMc95A";
 
-// ✅ Paste your Google Apps Script Web App URL here:
+// GOOGLE SHEET TOKEN
 const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbzxwBGQkJZIFDv2Q_NTTwkNtoO-hKaOOPaACoYihZhFnDhflCbNreqC-7dmlqFLLPwztg/exec";
 
-// Refresh cadence (ms)
 const REFRESH_MS = 60000;
 
 let map;
 let allData = { type: "FeatureCollection", features: [] };
 
+const els = {
+  sheet: document.getElementById("sheet"),
+  sheetToggle: document.getElementById("sheetToggle"),
+  collapseBtn: document.getElementById("collapseBtn"),
+  status: document.getElementById("status"),
+  count: document.getElementById("store-count"),
+  listings: document.getElementById("listings"),
+  filter: document.getElementById("filter"),
+};
+
 function setStatus(msg) {
-  const el = document.getElementById("status");
-  if (el) el.textContent = msg || "";
+  if (els.status) els.status.textContent = msg || "";
 }
 
 function setCount(n) {
-  const el = document.getElementById("store-count");
-  if (el) el.textContent = `Chapters: ${n}`;
+  if (els.count) els.count.textContent = `Chapters: ${n}`;
 }
 
 function ensureHttp(url) {
@@ -50,13 +57,13 @@ async function loadGeoJSON() {
   }
 
   if (!json || json.type !== "FeatureCollection" || !Array.isArray(json.features)) {
-    throw new Error("API returned JSON but not GeoJSON FeatureCollection");
+    throw new Error("API JSON is not a GeoJSON FeatureCollection");
   }
 
-  // Normalize IDs (in case backend changes)
+  // Ensure IDs exist + stable
   json.features = json.features.map((f, i) => {
     if (!f.properties) f.properties = {};
-    f.properties.id = Number.isFinite(f.properties.id) ? f.properties.id : i;
+    if (!Number.isFinite(f.properties.id)) f.properties.id = i;
     return f;
   });
 
@@ -67,7 +74,7 @@ function smoothFlyTo(coords) {
   map.flyTo({
     center: coords,
     zoom: 12,
-    speed: 0.8,
+    speed: 0.85,
     curve: 1.25,
     essential: true
   });
@@ -84,20 +91,16 @@ function openPopup(feature) {
   const p = feature.properties || {};
   const join = ensureHttp(p.joinUrl);
 
-  const actions = `
-    <div class="popup-actions">
-      ${p.email ? `<a class="pill email" href="mailto:${p.email}">Email</a>` : ""}
-      ${join ? `<a class="pill join" href="${join}" target="_blank" rel="noopener">Join →</a>` : ""}
-    </div>
-  `;
-
   new mapboxgl.Popup({ offset: 16, closeButton: true, closeOnClick: true })
     .setLngLat(feature.geometry.coordinates)
     .setHTML(`
       <div>
         <div class="popup-title">${p.name || "Chapter"}</div>
         <div class="popup-address">${p.address || ""}</div>
-        ${actions}
+        <div class="popup-actions">
+          ${p.email ? `<a class="pill email" href="mailto:${p.email}">Email</a>` : ""}
+          ${join ? `<a class="pill join" href="${join}" target="_blank" rel="noopener">Join →</a>` : ""}
+        </div>
       </div>
     `)
     .addTo(map);
@@ -110,9 +113,7 @@ function setActiveListing(id) {
 }
 
 function buildSidebar(data) {
-  const listings = document.getElementById("listings");
-  listings.innerHTML = "";
-
+  els.listings.innerHTML = "";
   setCount(data.features.length);
 
   for (const feature of data.features) {
@@ -133,6 +134,11 @@ function buildSidebar(data) {
       smoothFlyTo(feature.geometry.coordinates);
       openPopup(feature);
       setActiveListing(p.id);
+
+      // On mobile, expand sheet when they select an item
+      if (window.matchMedia("(max-width: 768px)").matches) {
+        setSheetState("expanded");
+      }
     });
 
     const details = document.createElement("div");
@@ -163,7 +169,7 @@ function buildSidebar(data) {
     item.appendChild(title);
     item.appendChild(details);
     if (meta.children.length) item.appendChild(meta);
-    listings.appendChild(item);
+    els.listings.appendChild(item);
   }
 }
 
@@ -171,7 +177,7 @@ function filterData(query) {
   const q = (query || "").trim().toLowerCase();
   if (!q) return allData;
 
-  const filtered = {
+  return {
     type: "FeatureCollection",
     features: allData.features.filter(f => {
       const p = f.properties || {};
@@ -180,8 +186,6 @@ function filterData(query) {
       return name.includes(q) || address.includes(q);
     })
   };
-
-  return filtered;
 }
 
 function fitToData(data) {
@@ -189,6 +193,46 @@ function fitToData(data) {
   const bounds = new mapboxgl.LngLatBounds();
   for (const f of data.features) bounds.extend(f.geometry.coordinates);
   map.fitBounds(bounds, { padding: 70, maxZoom: 12 });
+}
+
+/**
+ * Mobile fix: adjust map padding so dots aren't under the bottom sheet.
+ */
+function updateMapPaddingForSheet() {
+  if (!map) return;
+
+  const isMobile = window.matchMedia("(max-width: 768px)").matches;
+  if (!isMobile) {
+    map.setPadding({ top: 10, bottom: 10, left: 440, right: 10 });
+    return;
+  }
+
+  const rect = els.sheet.getBoundingClientRect();
+  const bottomPad = Math.max(0, window.innerHeight - rect.top) + 10;
+  map.setPadding({ top: 10, bottom: bottomPad, left: 10, right: 10 });
+}
+
+function setSheetState(state) {
+  if (!els.sheet) return;
+
+  els.sheet.classList.remove("collapsed", "expanded");
+  els.sheet.classList.add(state);
+
+  // Update aria label on handle
+  if (els.sheetToggle) {
+    els.sheetToggle.setAttribute(
+      "aria-label",
+      state === "expanded" ? "Collapse chapter list" : "Expand chapter list"
+    );
+  }
+
+  // Let CSS animate, then update padding
+  setTimeout(updateMapPaddingForSheet, 240);
+}
+
+function toggleSheet() {
+  const isExpanded = els.sheet.classList.contains("expanded");
+  setSheetState(isExpanded ? "collapsed" : "expanded");
 }
 
 async function init() {
@@ -201,7 +245,7 @@ async function init() {
 
   map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
-  // Optional: Geocoder search (top-left)
+  // Geocoder (optional)
   const geocoder = new MapboxGeocoder({
     accessToken: mapboxgl.accessToken,
     mapboxgl,
@@ -210,15 +254,22 @@ async function init() {
   });
   map.addControl(geocoder, "top-left");
 
-  // Sidebar filter
-  const filterInput = document.getElementById("filter");
-  filterInput.addEventListener("input", () => {
-    const filtered = filterData(filterInput.value);
-    buildSidebar(filtered);
+  // Bottom sheet controls (mobile)
+  if (els.sheetToggle) els.sheetToggle.addEventListener("click", toggleSheet);
+  if (els.collapseBtn) els.collapseBtn.addEventListener("click", () => setSheetState("collapsed"));
 
-    // Update map source to match filter (so clicks match)
+  // Filter -> updates list AND map
+  els.filter.addEventListener("input", () => {
+    const showing = filterData(els.filter.value);
+    buildSidebar(showing);
+
     const src = map.getSource("places");
-    if (src) src.setData(filtered);
+    if (src) src.setData(showing);
+  });
+
+  // Keep padding correct on rotate/resize
+  window.addEventListener("resize", () => {
+    updateMapPaddingForSheet();
   });
 
   map.on("load", async () => {
@@ -228,7 +279,6 @@ async function init() {
 
       map.addSource("places", { type: "geojson", data: allData });
 
-      // Branded markers (your palette)
       map.addLayer({
         id: "locations",
         type: "circle",
@@ -242,16 +292,31 @@ async function init() {
         }
       });
 
+      // Initial UI
       buildSidebar(allData);
       fitToData(allData);
-      setStatus(`Loaded`);
+      setStatus(`Loaded ${allData.features.length} chapters`);
+
+      // Default mobile state collapsed (so map feels usable)
+      if (window.matchMedia("(max-width: 768px)").matches) {
+        setSheetState("collapsed");
+      }
+
+      // Ensure padding matches sheet state
+      updateMapPaddingForSheet();
 
       map.on("click", "locations", (e) => {
         const feature = e.features && e.features[0];
         if (!feature) return;
+
         smoothFlyTo(feature.geometry.coordinates);
         openPopup(feature);
         setActiveListing(feature.properties.id);
+
+        // Mobile: expand to show details/actions
+        if (window.matchMedia("(max-width: 768px)").matches) {
+          setSheetState("expanded");
+        }
       });
 
       map.on("mouseenter", "locations", () => (map.getCanvas().style.cursor = "pointer"));
@@ -263,17 +328,16 @@ async function init() {
           const latest = await loadGeoJSON();
           allData = latest;
 
-          const query = filterInput.value;
-          const showing = filterData(query);
+          const showing = filterData(els.filter.value);
 
           const src = map.getSource("places");
           if (src) src.setData(showing);
 
           buildSidebar(showing);
-          setStatus(`Updated`);
+          setStatus(`Updated (${allData.features.length})`);
         } catch (err) {
           console.error(err);
-          setStatus(`Update failed`);
+          setStatus("Update failed");
         }
       }, REFRESH_MS);
 
