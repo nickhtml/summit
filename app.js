@@ -1,57 +1,22 @@
 mapboxgl.accessToken = "pk.eyJ1Ijoib2tkZW1zIiwiYSI6ImNtbTl1b3FhdzA3M2UycHBvZmZxYzRmYXgifQ.MGb9x34kBeR0lDV8FMc95A";
 
-// ✅ Paste your Apps Script Web App URL here (must start with https://script.google.com/macros/s/...)
+// ✅ Paste your Google Apps Script Web App URL here:
 const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbzxwBGQkJZIFDv2Q_NTTwkNtoO-hKaOOPaACoYihZhFnDhflCbNreqC-7dmlqFLLPwztg/exec";
 
+// Refresh cadence (ms)
+const REFRESH_MS = 60000;
+
 let map;
+let allData = { type: "FeatureCollection", features: [] };
 
 function setStatus(msg) {
   const el = document.getElementById("status");
   if (el) el.textContent = msg || "";
 }
 
-async function fetchWithTimeout(url, ms) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-
-  try {
-    const res = await fetch(url, { cache: "no-store", signal: controller.signal });
-    return res;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function fetchChapters() {
-  const res = await fetchWithTimeout(SHEET_API_URL, 10000);
-
-  if (!res.ok) {
-    throw new Error(`API HTTP ${res.status} ${res.statusText}`);
-  }
-
-  // If the endpoint is returning HTML (like a login page), this will fail clearly
-  const text = await res.text();
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    throw new Error("API did not return JSON. (Often wrong URL or not publicly accessible)");
-  }
-
-  if (!json || json.type !== "FeatureCollection" || !Array.isArray(json.features)) {
-    throw new Error("API returned JSON, but not a GeoJSON FeatureCollection");
-  }
-
-  return json;
-}
-
-function flyToStore(feature) {
-  map.flyTo({ center: feature.geometry.coordinates, zoom: 12 });
-}
-
-function clearPopups() {
-  const popUps = document.getElementsByClassName("mapboxgl-popup");
-  if (popUps[0]) popUps[0].remove();
+function setCount(n) {
+  const el = document.getElementById("store-count");
+  if (el) el.textContent = `Chapters: ${n}`;
 }
 
 function ensureHttp(url) {
@@ -62,59 +27,168 @@ function ensureHttp(url) {
   return "https://" + u;
 }
 
-function createPopup(feature) {
+async function fetchWithTimeout(url, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { cache: "no-store", signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function loadGeoJSON() {
+  const res = await fetchWithTimeout(SHEET_API_URL, 10000);
+  if (!res.ok) throw new Error(`API HTTP ${res.status}`);
+
+  const text = await res.text();
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error("API did not return JSON (wrong URL or not public)");
+  }
+
+  if (!json || json.type !== "FeatureCollection" || !Array.isArray(json.features)) {
+    throw new Error("API returned JSON but not GeoJSON FeatureCollection");
+  }
+
+  // Normalize IDs (in case backend changes)
+  json.features = json.features.map((f, i) => {
+    if (!f.properties) f.properties = {};
+    f.properties.id = Number.isFinite(f.properties.id) ? f.properties.id : i;
+    return f;
+  });
+
+  return json;
+}
+
+function smoothFlyTo(coords) {
+  map.flyTo({
+    center: coords,
+    zoom: 12,
+    speed: 0.8,
+    curve: 1.25,
+    essential: true
+  });
+}
+
+function clearPopups() {
+  const popUps = document.getElementsByClassName("mapboxgl-popup");
+  if (popUps[0]) popUps[0].remove();
+}
+
+function openPopup(feature) {
   clearPopups();
+
   const p = feature.properties || {};
   const join = ensureHttp(p.joinUrl);
 
-  new mapboxgl.Popup()
+  const actions = `
+    <div class="popup-actions">
+      ${p.email ? `<a class="pill email" href="mailto:${p.email}">Email</a>` : ""}
+      ${join ? `<a class="pill join" href="${join}" target="_blank" rel="noopener">Join →</a>` : ""}
+    </div>
+  `;
+
+  new mapboxgl.Popup({ offset: 16, closeButton: true, closeOnClick: true })
     .setLngLat(feature.geometry.coordinates)
     .setHTML(`
-      <h3 style="margin:0 0 6px 0;">${p.name || ""}</h3>
-      <div style="margin-bottom:8px;">${p.address || ""}</div>
-      ${p.email ? `<div><a href="mailto:${p.email}">${p.email}</a></div>` : ""}
-      ${join ? `<div style="margin-top:6px;"><a href="${join}" target="_blank" rel="noopener">Join this chapter →</a></div>` : ""}
+      <div>
+        <div class="popup-title">${p.name || "Chapter"}</div>
+        <div class="popup-address">${p.address || ""}</div>
+        ${actions}
+      </div>
     `)
     .addTo(map);
+}
+
+function setActiveListing(id) {
+  document.querySelectorAll(".item").forEach(el => el.classList.remove("active"));
+  const el = document.getElementById(`listing-${id}`);
+  if (el) el.classList.add("active");
 }
 
 function buildSidebar(data) {
   const listings = document.getElementById("listings");
   listings.innerHTML = "";
 
-  document.getElementById("store-count").textContent = `Chapters: ${data.features.length}`;
+  setCount(data.features.length);
 
-  data.features.forEach(feature => {
+  for (const feature of data.features) {
+    const p = feature.properties || {};
+    const join = ensureHttp(p.joinUrl);
+
     const item = document.createElement("div");
     item.className = "item";
+    item.id = `listing-${p.id}`;
 
-    const link = document.createElement("a");
-    link.href = "#";
-    link.className = "title";
-    link.textContent = feature.properties.name || "Chapter";
+    const title = document.createElement("a");
+    title.href = "#";
+    title.className = "titlelink";
+    title.textContent = p.name || "Chapter";
 
-    link.addEventListener("click", e => {
+    title.addEventListener("click", (e) => {
       e.preventDefault();
-      flyToStore(feature);
-      createPopup(feature);
-      document.querySelectorAll(".item").forEach(el => el.classList.remove("active"));
-      item.classList.add("active");
+      smoothFlyTo(feature.geometry.coordinates);
+      openPopup(feature);
+      setActiveListing(p.id);
     });
 
     const details = document.createElement("div");
     details.className = "details";
-    const join = ensureHttp(feature.properties.joinUrl);
+    details.textContent = p.address || "";
 
-    details.innerHTML = `
-      ${feature.properties.address || ""}<br>
-      ${feature.properties.email ? `<a href="mailto:${feature.properties.email}">${feature.properties.email}</a><br>` : ""}
-      ${join ? `<a href="${join}" target="_blank" rel="noopener">Join →</a>` : ""}
-    `;
+    const meta = document.createElement("div");
+    meta.className = "meta";
 
-    item.appendChild(link);
+    if (p.email) {
+      const email = document.createElement("a");
+      email.className = "pill email";
+      email.href = `mailto:${p.email}`;
+      email.textContent = "Email";
+      meta.appendChild(email);
+    }
+
+    if (join) {
+      const joinBtn = document.createElement("a");
+      joinBtn.className = "pill join";
+      joinBtn.href = join;
+      joinBtn.target = "_blank";
+      joinBtn.rel = "noopener";
+      joinBtn.textContent = "Join →";
+      meta.appendChild(joinBtn);
+    }
+
+    item.appendChild(title);
     item.appendChild(details);
+    if (meta.children.length) item.appendChild(meta);
     listings.appendChild(item);
-  });
+  }
+}
+
+function filterData(query) {
+  const q = (query || "").trim().toLowerCase();
+  if (!q) return allData;
+
+  const filtered = {
+    type: "FeatureCollection",
+    features: allData.features.filter(f => {
+      const p = f.properties || {};
+      const name = String(p.name || "").toLowerCase();
+      const address = String(p.address || "").toLowerCase();
+      return name.includes(q) || address.includes(q);
+    })
+  };
+
+  return filtered;
+}
+
+function fitToData(data) {
+  if (!data.features.length) return;
+  const bounds = new mapboxgl.LngLatBounds();
+  for (const f of data.features) bounds.extend(f.geometry.coordinates);
+  map.fitBounds(bounds, { padding: 70, maxZoom: 12 });
 }
 
 async function init() {
@@ -127,60 +201,85 @@ async function init() {
 
   map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
+  // Optional: Geocoder search (top-left)
+  const geocoder = new MapboxGeocoder({
+    accessToken: mapboxgl.accessToken,
+    mapboxgl,
+    marker: false,
+    placeholder: "Search a place…"
+  });
+  map.addControl(geocoder, "top-left");
+
+  // Sidebar filter
+  const filterInput = document.getElementById("filter");
+  filterInput.addEventListener("input", () => {
+    const filtered = filterData(filterInput.value);
+    buildSidebar(filtered);
+
+    // Update map source to match filter (so clicks match)
+    const src = map.getSource("places");
+    if (src) src.setData(filtered);
+  });
+
   map.on("load", async () => {
     try {
-      setStatus("Loading chapters…");
+      setStatus("Loading…");
+      allData = await loadGeoJSON();
 
-      const data = await fetchChapters();
+      map.addSource("places", { type: "geojson", data: allData });
 
-      map.addSource("places", { type: "geojson", data });
-
+      // Branded markers (your palette)
       map.addLayer({
         id: "locations",
         type: "circle",
         source: "places",
         paint: {
-          "circle-radius": 8,
-          "circle-stroke-width": 2,
-          "circle-opacity": 0.9
+          "circle-radius": 9,
+          "circle-color": "#E63946",
+          "circle-stroke-width": 3,
+          "circle-stroke-color": "#F1FAEE",
+          "circle-opacity": 0.95
         }
       });
 
-      buildSidebar(data);
+      buildSidebar(allData);
+      fitToData(allData);
+      setStatus(`Loaded`);
 
-      if (data.features.length) {
-        const bounds = new mapboxgl.LngLatBounds();
-        data.features.forEach(f => bounds.extend(f.geometry.coordinates));
-        map.fitBounds(bounds, { padding: 60, maxZoom: 12 });
-      }
-
-      map.on("click", "locations", e => {
+      map.on("click", "locations", (e) => {
         const feature = e.features && e.features[0];
         if (!feature) return;
-        flyToStore(feature);
-        createPopup(feature);
+        smoothFlyTo(feature.geometry.coordinates);
+        openPopup(feature);
+        setActiveListing(feature.properties.id);
       });
 
       map.on("mouseenter", "locations", () => (map.getCanvas().style.cursor = "pointer"));
       map.on("mouseleave", "locations", () => (map.getCanvas().style.cursor = ""));
 
-      setStatus(`Loaded ${data.features.length} chapters`);
-
+      // Auto refresh
       setInterval(async () => {
         try {
-          const updated = await fetchChapters();
-          map.getSource("places").setData(updated);
-          buildSidebar(updated);
-          setStatus(`Updated ${updated.features.length} chapters`);
+          const latest = await loadGeoJSON();
+          allData = latest;
+
+          const query = filterInput.value;
+          const showing = filterData(query);
+
+          const src = map.getSource("places");
+          if (src) src.setData(showing);
+
+          buildSidebar(showing);
+          setStatus(`Updated`);
         } catch (err) {
           console.error(err);
-          setStatus(`Refresh failed: ${err.message}`);
+          setStatus(`Update failed`);
         }
-      }, 60000);
+      }, REFRESH_MS);
 
     } catch (err) {
       console.error(err);
-      setStatus(`Failed: ${err.name === "AbortError" ? "API timed out" : err.message}`);
+      setStatus(err.name === "AbortError" ? "API timed out" : `Failed: ${err.message}`);
     }
   });
 }
