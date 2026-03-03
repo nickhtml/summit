@@ -1,14 +1,9 @@
 mapboxgl.accessToken = "pk.eyJ1Ijoib2tkZW1zIiwiYSI6ImNtbTl1b3FhdzA3M2UycHBvZmZxYzRmYXgifQ.MGb9x34kBeR0lDV8FMc95A";
 
-// ✅ Paste your Apps Script Web App URL here:
+// web url
 const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbzxwBGQkJZIFDv2Q_NTTwkNtoO-hKaOOPaACoYihZhFnDhflCbNreqC-7dmlqFLLPwztg/exec";
 
 const REFRESH_MS = 60000;
-
-// Mobile sheet snap points (px and vh) computed at runtime
-let SHEET_COLLAPSED_PX = 160;
-let SHEET_MID_PX = 360;
-let SHEET_EXPANDED_PX = 0; // set on init
 
 let map;
 let allData = { type: "FeatureCollection", features: [] };
@@ -27,13 +22,8 @@ function isMobile() {
   return window.matchMedia("(max-width: 768px)").matches;
 }
 
-function setStatus(msg) {
-  el.status.textContent = msg || "";
-}
-
-function setCount(n) {
-  el.count.textContent = `Chapters: ${n}`;
-}
+function setStatus(msg) { el.status.textContent = msg || ""; }
+function setCount(n) { el.count.textContent = `Chapters: ${n}`; }
 
 function ensureHttp(url) {
   if (!url) return "";
@@ -69,7 +59,6 @@ async function loadGeoJSON() {
     throw new Error("API JSON is not a GeoJSON FeatureCollection");
   }
 
-  // Ensure stable numeric ids
   json.features = json.features.map((f, i) => {
     if (!f.properties) f.properties = {};
     if (!Number.isFinite(f.properties.id)) f.properties.id = i;
@@ -96,7 +85,6 @@ function clearPopups() {
 
 function openPopup(feature) {
   clearPopups();
-
   const p = feature.properties || {};
   const join = ensureHttp(p.joinUrl);
 
@@ -137,12 +125,13 @@ function buildSidebar(data) {
     title.href = "#";
     title.className = "titlelink";
     title.textContent = p.name || "Chapter";
+
     title.addEventListener("click", (e) => {
       e.preventDefault();
       smoothFlyTo(feature.geometry.coordinates);
       openPopup(feature);
       setActiveListing(p.id);
-      if (isMobile()) setSheetHeight(SHEET_MID_PX, true);
+      if (isMobile()) setSheetHeight(sheetExpandedPx(), true);
     });
 
     const details = document.createElement("div");
@@ -177,6 +166,7 @@ function buildSidebar(data) {
   }
 }
 
+/* Search ONLY your dataset */
 function filterData(query) {
   const q = (query || "").trim().toLowerCase();
   if (!q) return allData;
@@ -187,27 +177,36 @@ function filterData(query) {
       const p = f.properties || {};
       const name = String(p.name || "").toLowerCase();
       const address = String(p.address || "").toLowerCase();
+      // includes school name + whatever’s in address field (city, etc.)
       return name.includes(q) || address.includes(q);
     })
   };
 }
 
-/* ===== Sheet mechanics (mobile only) ===== */
+/* ===== Mobile drawer mechanics ===== */
+function sheetCollapsedPx() {
+  return 140; // peek height
+}
+function sheetExpandedPx() {
+  // cap at 50vh as requested
+  return Math.round(window.innerHeight * 0.50);
+}
 
-function recomputeSheetHeights() {
-  // collapsed: enough to show header + search + a couple cards
-  SHEET_COLLAPSED_PX = 160;
-  SHEET_MID_PX = Math.round(window.innerHeight * 0.52);
-  SHEET_EXPANDED_PX = Math.round(window.innerHeight * 0.80);
+function currentSheetHeight() {
+  const v = getComputedStyle(el.panel).getPropertyValue("--sheet-h").trim();
+  const n = Number(String(v).replace("px", ""));
+  return Number.isFinite(n) ? n : sheetCollapsedPx();
 }
 
 function setSheetHeight(px, animate = false) {
   if (!isMobile()) return;
 
-  const clamped = Math.max(SHEET_COLLAPSED_PX, Math.min(SHEET_EXPANDED_PX, px));
+  const minH = sheetCollapsedPx();
+  const maxH = sheetExpandedPx();
+
+  const clamped = Math.max(minH, Math.min(maxH, px));
   el.panel.style.setProperty("--sheet-h", `${clamped}px`);
 
-  // optional animation: let CSS transitions happen by temporarily adding inline transition
   if (animate) {
     el.panel.style.transition = "height 220ms ease";
     setTimeout(() => { el.panel.style.transition = ""; }, 240);
@@ -217,8 +216,11 @@ function setSheetHeight(px, animate = false) {
 }
 
 function snapSheet(px) {
-  // snap to nearest of collapsed/mid/expanded
-  const points = [SHEET_COLLAPSED_PX, SHEET_MID_PX, SHEET_EXPANDED_PX];
+  const minH = sheetCollapsedPx();
+  const maxH = sheetExpandedPx();
+  const midH = Math.round((minH + maxH) / 2);
+
+  const points = [minH, midH, maxH];
   let nearest = points[0];
   let best = Math.abs(px - points[0]);
   for (const p of points) {
@@ -228,30 +230,21 @@ function snapSheet(px) {
   setSheetHeight(nearest, true);
 }
 
-function currentSheetHeight() {
-  const v = getComputedStyle(el.panel).getPropertyValue("--sheet-h").trim();
-  const n = Number(String(v).replace("px", ""));
-  return Number.isFinite(n) ? n : SHEET_COLLAPSED_PX;
-}
-
-/* ===== Map padding (desktop and mobile) ===== */
-
+/* ===== Map padding ===== */
 function updateMapPadding() {
   if (!map) return;
 
   if (!isMobile()) {
-    // keep controls & viewport away from sidebar
+    // left sidebar width + a little breathing room
     map.setPadding({ top: 10, bottom: 10, left: 440, right: 10 });
     return;
   }
 
   const h = currentSheetHeight();
-  // bottom padding = sheet height + margin, so markers aren’t hidden
   map.setPadding({ top: 10, bottom: h + 20, left: 10, right: 10 });
 }
 
-/* ===== Mobile drag handling (pointer events) ===== */
-
+/* ===== Drag handling ===== */
 function attachSheetDrag() {
   if (!el.sheetHandle) return;
 
@@ -269,9 +262,8 @@ function attachSheetDrag() {
 
   const onMove = (e) => {
     if (!dragging || !isMobile()) return;
-    const dy = startY - e.clientY;     // moving finger up increases height
-    const next = startH + dy;
-    setSheetHeight(next, false);
+    const dy = startY - e.clientY; // drag up => bigger
+    setSheetHeight(startH + dy, false);
   };
 
   const onUp = (e) => {
@@ -285,18 +277,16 @@ function attachSheetDrag() {
   window.addEventListener("pointermove", onMove);
   window.addEventListener("pointerup", onUp);
 
-  // Tap handle to toggle between collapsed and mid
+  // Tap handle toggles collapsed/expanded
   el.sheetHandle.addEventListener("click", () => {
     if (!isMobile()) return;
     const h = currentSheetHeight();
-    const target = (h <= SHEET_COLLAPSED_PX + 30) ? SHEET_MID_PX : SHEET_COLLAPSED_PX;
+    const target = (h <= sheetCollapsedPx() + 25) ? sheetExpandedPx() : sheetCollapsedPx();
     setSheetHeight(target, true);
   });
 }
 
 async function init() {
-  recomputeSheetHeights();
-
   map = new mapboxgl.Map({
     container: "map",
     style: "mapbox://styles/mapbox/standard",
@@ -306,16 +296,7 @@ async function init() {
 
   map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
-  // Geocoder (top-left)
-  const geocoder = new MapboxGeocoder({
-    accessToken: mapboxgl.accessToken,
-    mapboxgl,
-    marker: false,
-    placeholder: "Search a place…"
-  });
-  map.addControl(geocoder, "top-left");
-
-  // Filter updates list AND map
+  // Search input filters your chapters (desktop + mobile)
   el.filter.addEventListener("input", () => {
     const showing = filterData(el.filter.value);
     buildSidebar(showing);
@@ -323,23 +304,20 @@ async function init() {
     if (src) src.setData(showing);
   });
 
-  // Collapse button (mobile only)
+  // Mobile collapse button
   el.collapseBtn.addEventListener("click", () => {
     if (!isMobile()) return;
-    setSheetHeight(SHEET_COLLAPSED_PX, true);
+    setSheetHeight(sheetCollapsedPx(), true);
   });
 
-  // Drag behavior
   attachSheetDrag();
 
-  // On resize/orientation changes, recompute snap points + update padding
   window.addEventListener("resize", () => {
-    recomputeSheetHeights();
+    map.resize();
     if (isMobile()) {
-      // keep current height within new bounds
+      // keep within [collapsed, expanded]
       setSheetHeight(currentSheetHeight(), false);
     }
-    map.resize();
     updateMapPadding();
   });
 
@@ -363,17 +341,13 @@ async function init() {
         }
       });
 
-      // Initial UI
       buildSidebar(allData);
       setStatus(`Loaded ${allData.features.length} chapters`);
 
-      // Mobile starts collapsed, desktop full height sidebar
-      if (isMobile()) {
-        setSheetHeight(SHEET_COLLAPSED_PX, false);
-      }
+      // Start mobile collapsed peek
+      if (isMobile()) setSheetHeight(sheetCollapsedPx(), false);
       updateMapPadding();
 
-      // Marker click
       map.on("click", "locations", (e) => {
         const feature = e.features && e.features[0];
         if (!feature) return;
@@ -382,8 +356,7 @@ async function init() {
         openPopup(feature);
         setActiveListing(feature.properties.id);
 
-        // On mobile, snap open to mid so user can act
-        if (isMobile()) setSheetHeight(SHEET_MID_PX, true);
+        if (isMobile()) setSheetHeight(sheetExpandedPx(), true);
       });
 
       map.on("mouseenter", "locations", () => (map.getCanvas().style.cursor = "pointer"));
