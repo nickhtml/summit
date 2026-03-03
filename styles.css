@@ -11,8 +11,8 @@
   --border: rgba(29, 53, 87, 0.14);
   --shadow: 0 18px 55px rgba(0,0,0,0.18);
 
-  /* mobile sheet height (JS sets this) */
-  --sheet-h: 160px;
+  /* Mobile sheet height controlled by JS */
+  --sheet-h: 140px;
   --radius: 18px;
 }
 
@@ -26,7 +26,7 @@ html, body {
   color: var(--navy);
 }
 
-/* ===== Desktop Experience (true 2-panel) ===== */
+/* ===== Desktop Experience: real two-panel layout ===== */
 .app {
   height: 100%;
   display: grid;
@@ -40,13 +40,16 @@ html, body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  z-index: 1;
 }
 
 .map {
   height: 100%;
+  position: relative;
+  z-index: 0;
 }
 
-/* Desktop: hide mobile-only controls */
+/* Desktop hides mobile-only controls */
 .sheet-handle,
 .collapse-btn {
   display: none;
@@ -174,9 +177,7 @@ html, body {
   color: var(--blue);
   border-color: rgba(69, 123, 157, 0.25);
 }
-.pill.email:hover {
-  background: rgba(69, 123, 157, 0.18);
-}
+.pill.email:hover { background: rgba(69, 123, 157, 0.18); }
 
 /* Popup polish */
 .mapboxgl-popup-content {
@@ -203,16 +204,15 @@ html, body {
   gap: 10px;
 }
 
-/* ===== Mobile Experience (full map + draggable bottom sheet) ===== */
+/* ===== Mobile Experience: full map + bottom drawer (max half screen) ===== */
 @media (max-width: 768px) {
-  .app {
-    display: block;
-  }
+  .app { display: block; }
 
   .map {
     position: fixed;
     inset: 0;
     height: auto;
+    z-index: 0;
   }
 
   .panel {
@@ -221,11 +221,13 @@ html, body {
     right: 10px;
     bottom: calc(10px + env(safe-area-inset-bottom));
     height: var(--sheet-h);
+    max-height: 50vh; /* IMPORTANT: max half screen */
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    overflow: hidden;
     background: var(--panel-bg);
+    overflow: hidden;
+    z-index: 9999; /* force above map on iOS */
   }
 
   .sheet-handle {
@@ -233,6 +235,7 @@ html, body {
     padding: 10px 0 4px;
     cursor: grab;
     touch-action: none;
+    user-select: none;
   }
   .sheet-handle:active { cursor: grabbing; }
 
@@ -254,6 +257,6 @@ html, body {
     font-weight: 900;
   }
 
-  /* on mobile we don’t need hover lift */
+  /* No hover lift on mobile */
   .item:hover { transform: none; box-shadow: none; }
 }
