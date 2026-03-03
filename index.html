@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>SUMMIT - Find Your Chapter</title>
 
   <!-- Mapbox GL JS -->
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.14.0/mapbox-gl.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.14.0/mapbox-gl.css" rel="stylesheet" />
 
-  <!-- Mapbox Geocoder -->
+  <!-- Geocoder -->
   <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.3/mapbox-gl-geocoder.min.js"></script>
   <link
     href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.3/mapbox-gl-geocoder.css"
@@ -22,23 +22,28 @@
 <body>
   <div id="map" class="map"></div>
 
-  <aside class="panel" id="panel" aria-label="Chapter list">
-    <div class="panel-handle" aria-hidden="true">
-      <div class="grabber"></div>
-    </div>
+  <!-- Bottom sheet / sidebar -->
+  <aside id="sheet" class="sheet collapsed" aria-label="Chapter list">
+    <button id="sheetToggle" class="sheet-handle" aria-label="Expand chapter list">
+      <span class="grabber"></span>
+    </button>
 
-    <header class="panel-header">
-      <div class="title-wrap">
-        <h1 class="title">Find your chapter</h1>
-        <div class="subtitle">
+    <header class="sheet-header">
+      <div class="header-text">
+        <h1 class="title">Find Your Chapter</h1>
+        <div class="sub">
           <span id="store-count">Chapters: 0</span>
-          <span class="dot-sep">•</span>
+          <span class="sep">•</span>
           <span id="status">Loading…</span>
         </div>
       </div>
+
+      <button id="collapseBtn" class="collapse-btn" type="button" aria-label="Collapse">
+        Collapse
+      </button>
     </header>
 
-    <div class="panel-controls">
+    <div class="controls">
       <input
         id="filter"
         class="filter"
