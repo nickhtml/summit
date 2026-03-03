@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SUMMIT - Find Your Chapter</title>
 
+  <!-- Mapbox GL JS -->
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.14.0/mapbox-gl.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.14.0/mapbox-gl.css" rel="stylesheet" />
 
+  <!-- Mapbox Geocoder -->
   <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.3/mapbox-gl-geocoder.min.js"></script>
   <link
     href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.3/mapbox-gl-geocoder.css"
@@ -18,16 +20,37 @@
 </head>
 
 <body>
-  <div class="sidebar">
-    <div class="sidebar-header">
-      <h2>Find Your Chapter</h2>
-      <div id="store-count">Chapters: 0</div>
-      <div id="status" style="font-size:0.85rem; opacity:0.8;"></div>
-    </div>
-    <div id="listings"></div>
-  </div>
+  <div id="map" class="map"></div>
 
-  <div id="map"></div>
+  <aside class="panel" id="panel" aria-label="Chapter list">
+    <div class="panel-handle" aria-hidden="true">
+      <div class="grabber"></div>
+    </div>
+
+    <header class="panel-header">
+      <div class="title-wrap">
+        <h1 class="title">Find your chapter</h1>
+        <div class="subtitle">
+          <span id="store-count">Chapters: 0</span>
+          <span class="dot-sep">•</span>
+          <span id="status">Loading…</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="panel-controls">
+      <input
+        id="filter"
+        class="filter"
+        type="search"
+        placeholder="Search school / city…"
+        autocomplete="off"
+        spellcheck="false"
+      />
+    </div>
+
+    <div id="listings" class="listings"></div>
+  </aside>
 
   <script src="app.js"></script>
 </body>
