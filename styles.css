@@ -1,71 +1,132 @@
+:root {
+  --red: #E63946;
+  --green: #1FB976;
+  --cream: #F1FAEE;
+  --yellow: #FFBA49;
+  --lightblue: #A8DADC;
+  --blue: #457B9D;
+  --navy: #1D3557;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
-  padding: 0;
-  height: 100vh;
-  overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--cream);
+  color: var(--navy);
 }
+
+/* ===== Desktop Layout ===== */
 
 .sidebar {
   position: absolute;
-  width: 25%;
-  min-width: 280px;
+  width: 28%;
+  min-width: 300px;
   max-width: 420px;
   height: 100%;
   top: 0;
   left: 0;
-  padding: 1rem;
+  padding: 1.25rem;
   overflow-y: auto;
-  background-color: #f4f3e7;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  background: white;
+  border-right: 1px solid rgba(0,0,0,0.05);
   z-index: 10;
+  transition: transform 0.3s ease;
 }
 
 #map {
   position: absolute;
-  left: 25%;
-  width: 75%;
+  left: 28%;
+  width: 72%;
   top: 0;
   bottom: 0;
 }
 
-.sidebar-header {
-  margin-bottom: 1rem;
+/* ===== Header ===== */
+
+.sidebar-header h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
 }
 
 #store-count {
   font-size: 0.9rem;
-  opacity: 0.8;
+  opacity: 0.7;
+  margin-top: 4px;
 }
 
+/* ===== Chapter Cards ===== */
+
 .item {
-  background: rgba(255,255,255,0.8);
-  border-radius: 12px;
-  padding: 0.75rem;
-  margin-bottom: 0.75rem;
-  border: 1px solid rgba(0,0,0,0.06);
+  background: var(--cream);
+  border-radius: 14px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.08);
 }
 
 .item.active {
-  outline: 2px solid rgba(0,0,0,0.25);
+  border: 2px solid var(--green);
+  background: #ffffff;
 }
 
 .item a.title {
-  font-weight: bold;
+  font-weight: 700;
+  font-size: 1.05rem;
   text-decoration: none;
-  color: black;
+  color: var(--navy);
   display: block;
-  margin-bottom: 0.25rem;
+  margin-bottom: 6px;
 }
 
 .item .details {
   font-size: 0.9rem;
+  line-height: 1.4;
 }
 
 .item .details a {
-  color: #0b5fff;
+  display: inline-block;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--green);
+  color: white;
   text-decoration: none;
+  font-weight: 600;
+  transition: 0.2s ease;
 }
+
 .item .details a:hover {
-  text-decoration: underline;
+  background: var(--navy);
+}
+
+/* ===== Mobile Layout ===== */
+
+@media (max-width: 768px) {
+
+  #map {
+    left: 0;
+    width: 100%;
+  }
+
+  .sidebar {
+    width: 100%;
+    max-width: 100%;
+    height: 45%;
+    bottom: 0;
+    top: auto;
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -10px 30px rgba(0,0,0,0.15);
+    overflow-y: scroll;
+  }
 }
