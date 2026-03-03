@@ -1,16 +1,21 @@
 mapboxgl.accessToken = "pk.eyJ1Ijoib2tkZW1zIiwiYSI6ImNtbTl1b3FhdzA3M2UycHBvZmZxYzRmYXgifQ.MGb9x34kBeR0lDV8FMc95A";
 
-// GOOGLE SHEET TOKEN
+// ✅ Paste your Apps Script Web App URL here:
 const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbzxwBGQkJZIFDv2Q_NTTwkNtoO-hKaOOPaACoYihZhFnDhflCbNreqC-7dmlqFLLPwztg/exec";
 
 const REFRESH_MS = 60000;
 
+// Mobile sheet snap points (px and vh) computed at runtime
+let SHEET_COLLAPSED_PX = 160;
+let SHEET_MID_PX = 360;
+let SHEET_EXPANDED_PX = 0; // set on init
+
 let map;
 let allData = { type: "FeatureCollection", features: [] };
 
-const els = {
-  sheet: document.getElementById("sheet"),
-  sheetToggle: document.getElementById("sheetToggle"),
+const el = {
+  panel: document.getElementById("panel"),
+  sheetHandle: document.getElementById("sheetHandle"),
   collapseBtn: document.getElementById("collapseBtn"),
   status: document.getElementById("status"),
   count: document.getElementById("store-count"),
@@ -18,12 +23,16 @@ const els = {
   filter: document.getElementById("filter"),
 };
 
+function isMobile() {
+  return window.matchMedia("(max-width: 768px)").matches;
+}
+
 function setStatus(msg) {
-  if (els.status) els.status.textContent = msg || "";
+  el.status.textContent = msg || "";
 }
 
 function setCount(n) {
-  if (els.count) els.count.textContent = `Chapters: ${n}`;
+  el.count.textContent = `Chapters: ${n}`;
 }
 
 function ensureHttp(url) {
@@ -60,7 +69,7 @@ async function loadGeoJSON() {
     throw new Error("API JSON is not a GeoJSON FeatureCollection");
   }
 
-  // Ensure IDs exist + stable
+  // Ensure stable numeric ids
   json.features = json.features.map((f, i) => {
     if (!f.properties) f.properties = {};
     if (!Number.isFinite(f.properties.id)) f.properties.id = i;
@@ -107,13 +116,13 @@ function openPopup(feature) {
 }
 
 function setActiveListing(id) {
-  document.querySelectorAll(".item").forEach(el => el.classList.remove("active"));
-  const el = document.getElementById(`listing-${id}`);
-  if (el) el.classList.add("active");
+  document.querySelectorAll(".item").forEach(n => n.classList.remove("active"));
+  const node = document.getElementById(`listing-${id}`);
+  if (node) node.classList.add("active");
 }
 
 function buildSidebar(data) {
-  els.listings.innerHTML = "";
+  el.listings.innerHTML = "";
   setCount(data.features.length);
 
   for (const feature of data.features) {
@@ -128,17 +137,12 @@ function buildSidebar(data) {
     title.href = "#";
     title.className = "titlelink";
     title.textContent = p.name || "Chapter";
-
     title.addEventListener("click", (e) => {
       e.preventDefault();
       smoothFlyTo(feature.geometry.coordinates);
       openPopup(feature);
       setActiveListing(p.id);
-
-      // On mobile, expand sheet when they select an item
-      if (window.matchMedia("(max-width: 768px)").matches) {
-        setSheetState("expanded");
-      }
+      if (isMobile()) setSheetHeight(SHEET_MID_PX, true);
     });
 
     const details = document.createElement("div");
@@ -169,7 +173,7 @@ function buildSidebar(data) {
     item.appendChild(title);
     item.appendChild(details);
     if (meta.children.length) item.appendChild(meta);
-    els.listings.appendChild(item);
+    el.listings.appendChild(item);
   }
 }
 
@@ -188,54 +192,111 @@ function filterData(query) {
   };
 }
 
-function fitToData(data) {
-  if (!data.features.length) return;
-  const bounds = new mapboxgl.LngLatBounds();
-  for (const f of data.features) bounds.extend(f.geometry.coordinates);
-  map.fitBounds(bounds, { padding: 70, maxZoom: 12 });
+/* ===== Sheet mechanics (mobile only) ===== */
+
+function recomputeSheetHeights() {
+  // collapsed: enough to show header + search + a couple cards
+  SHEET_COLLAPSED_PX = 160;
+  SHEET_MID_PX = Math.round(window.innerHeight * 0.52);
+  SHEET_EXPANDED_PX = Math.round(window.innerHeight * 0.80);
 }
 
-/**
- * Mobile fix: adjust map padding so dots aren't under the bottom sheet.
- */
-function updateMapPaddingForSheet() {
+function setSheetHeight(px, animate = false) {
+  if (!isMobile()) return;
+
+  const clamped = Math.max(SHEET_COLLAPSED_PX, Math.min(SHEET_EXPANDED_PX, px));
+  el.panel.style.setProperty("--sheet-h", `${clamped}px`);
+
+  // optional animation: let CSS transitions happen by temporarily adding inline transition
+  if (animate) {
+    el.panel.style.transition = "height 220ms ease";
+    setTimeout(() => { el.panel.style.transition = ""; }, 240);
+  }
+
+  updateMapPadding();
+}
+
+function snapSheet(px) {
+  // snap to nearest of collapsed/mid/expanded
+  const points = [SHEET_COLLAPSED_PX, SHEET_MID_PX, SHEET_EXPANDED_PX];
+  let nearest = points[0];
+  let best = Math.abs(px - points[0]);
+  for (const p of points) {
+    const d = Math.abs(px - p);
+    if (d < best) { best = d; nearest = p; }
+  }
+  setSheetHeight(nearest, true);
+}
+
+function currentSheetHeight() {
+  const v = getComputedStyle(el.panel).getPropertyValue("--sheet-h").trim();
+  const n = Number(String(v).replace("px", ""));
+  return Number.isFinite(n) ? n : SHEET_COLLAPSED_PX;
+}
+
+/* ===== Map padding (desktop and mobile) ===== */
+
+function updateMapPadding() {
   if (!map) return;
 
-  const isMobile = window.matchMedia("(max-width: 768px)").matches;
-  if (!isMobile) {
+  if (!isMobile()) {
+    // keep controls & viewport away from sidebar
     map.setPadding({ top: 10, bottom: 10, left: 440, right: 10 });
     return;
   }
 
-  const rect = els.sheet.getBoundingClientRect();
-  const bottomPad = Math.max(0, window.innerHeight - rect.top) + 10;
-  map.setPadding({ top: 10, bottom: bottomPad, left: 10, right: 10 });
+  const h = currentSheetHeight();
+  // bottom padding = sheet height + margin, so markers aren’t hidden
+  map.setPadding({ top: 10, bottom: h + 20, left: 10, right: 10 });
 }
 
-function setSheetState(state) {
-  if (!els.sheet) return;
+/* ===== Mobile drag handling (pointer events) ===== */
 
-  els.sheet.classList.remove("collapsed", "expanded");
-  els.sheet.classList.add(state);
+function attachSheetDrag() {
+  if (!el.sheetHandle) return;
 
-  // Update aria label on handle
-  if (els.sheetToggle) {
-    els.sheetToggle.setAttribute(
-      "aria-label",
-      state === "expanded" ? "Collapse chapter list" : "Expand chapter list"
-    );
-  }
+  let dragging = false;
+  let startY = 0;
+  let startH = 0;
 
-  // Let CSS animate, then update padding
-  setTimeout(updateMapPaddingForSheet, 240);
-}
+  const onDown = (e) => {
+    if (!isMobile()) return;
+    dragging = true;
+    startY = e.clientY;
+    startH = currentSheetHeight();
+    el.sheetHandle.setPointerCapture(e.pointerId);
+  };
 
-function toggleSheet() {
-  const isExpanded = els.sheet.classList.contains("expanded");
-  setSheetState(isExpanded ? "collapsed" : "expanded");
+  const onMove = (e) => {
+    if (!dragging || !isMobile()) return;
+    const dy = startY - e.clientY;     // moving finger up increases height
+    const next = startH + dy;
+    setSheetHeight(next, false);
+  };
+
+  const onUp = (e) => {
+    if (!dragging || !isMobile()) return;
+    dragging = false;
+    try { el.sheetHandle.releasePointerCapture(e.pointerId); } catch {}
+    snapSheet(currentSheetHeight());
+  };
+
+  el.sheetHandle.addEventListener("pointerdown", onDown);
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+
+  // Tap handle to toggle between collapsed and mid
+  el.sheetHandle.addEventListener("click", () => {
+    if (!isMobile()) return;
+    const h = currentSheetHeight();
+    const target = (h <= SHEET_COLLAPSED_PX + 30) ? SHEET_MID_PX : SHEET_COLLAPSED_PX;
+    setSheetHeight(target, true);
+  });
 }
 
 async function init() {
+  recomputeSheetHeights();
+
   map = new mapboxgl.Map({
     container: "map",
     style: "mapbox://styles/mapbox/standard",
@@ -245,7 +306,7 @@ async function init() {
 
   map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
-  // Geocoder (optional)
+  // Geocoder (top-left)
   const geocoder = new MapboxGeocoder({
     accessToken: mapboxgl.accessToken,
     mapboxgl,
@@ -254,22 +315,32 @@ async function init() {
   });
   map.addControl(geocoder, "top-left");
 
-  // Bottom sheet controls (mobile)
-  if (els.sheetToggle) els.sheetToggle.addEventListener("click", toggleSheet);
-  if (els.collapseBtn) els.collapseBtn.addEventListener("click", () => setSheetState("collapsed"));
-
-  // Filter -> updates list AND map
-  els.filter.addEventListener("input", () => {
-    const showing = filterData(els.filter.value);
+  // Filter updates list AND map
+  el.filter.addEventListener("input", () => {
+    const showing = filterData(el.filter.value);
     buildSidebar(showing);
-
     const src = map.getSource("places");
     if (src) src.setData(showing);
   });
 
-  // Keep padding correct on rotate/resize
+  // Collapse button (mobile only)
+  el.collapseBtn.addEventListener("click", () => {
+    if (!isMobile()) return;
+    setSheetHeight(SHEET_COLLAPSED_PX, true);
+  });
+
+  // Drag behavior
+  attachSheetDrag();
+
+  // On resize/orientation changes, recompute snap points + update padding
   window.addEventListener("resize", () => {
-    updateMapPaddingForSheet();
+    recomputeSheetHeights();
+    if (isMobile()) {
+      // keep current height within new bounds
+      setSheetHeight(currentSheetHeight(), false);
+    }
+    map.resize();
+    updateMapPadding();
   });
 
   map.on("load", async () => {
@@ -294,17 +365,15 @@ async function init() {
 
       // Initial UI
       buildSidebar(allData);
-      fitToData(allData);
       setStatus(`Loaded ${allData.features.length} chapters`);
 
-      // Default mobile state collapsed (so map feels usable)
-      if (window.matchMedia("(max-width: 768px)").matches) {
-        setSheetState("collapsed");
+      // Mobile starts collapsed, desktop full height sidebar
+      if (isMobile()) {
+        setSheetHeight(SHEET_COLLAPSED_PX, false);
       }
+      updateMapPadding();
 
-      // Ensure padding matches sheet state
-      updateMapPaddingForSheet();
-
+      // Marker click
       map.on("click", "locations", (e) => {
         const feature = e.features && e.features[0];
         if (!feature) return;
@@ -313,23 +382,20 @@ async function init() {
         openPopup(feature);
         setActiveListing(feature.properties.id);
 
-        // Mobile: expand to show details/actions
-        if (window.matchMedia("(max-width: 768px)").matches) {
-          setSheetState("expanded");
-        }
+        // On mobile, snap open to mid so user can act
+        if (isMobile()) setSheetHeight(SHEET_MID_PX, true);
       });
 
       map.on("mouseenter", "locations", () => (map.getCanvas().style.cursor = "pointer"));
       map.on("mouseleave", "locations", () => (map.getCanvas().style.cursor = ""));
 
-      // Auto refresh
+      // Refresh loop
       setInterval(async () => {
         try {
           const latest = await loadGeoJSON();
           allData = latest;
 
-          const showing = filterData(els.filter.value);
-
+          const showing = filterData(el.filter.value);
           const src = map.getSource("places");
           if (src) src.setData(showing);
 
