@@ -7,15 +7,13 @@
   --blue: #457B9D;
   --navy: #1D3557;
 
-  --panel: rgba(255,255,255,0.92);
-  --border: rgba(29,53,87,0.14);
+  --panel-bg: rgba(255, 255, 255, 0.94);
+  --border: rgba(29, 53, 87, 0.14);
   --shadow: 0 18px 55px rgba(0,0,0,0.18);
 
+  /* mobile sheet height (JS sets this) */
+  --sheet-h: 160px;
   --radius: 18px;
-
-  /* Mobile sheet heights */
-  --sheet-collapsed: 148px;
-  --sheet-expanded: 72vh;
 }
 
 * { box-sizing: border-box; }
@@ -24,86 +22,45 @@ html, body {
   height: 100%;
   margin: 0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  color: var(--navy);
   background: var(--cream);
+  color: var(--navy);
 }
 
-/* Map is ALWAYS full screen */
-.map {
-  position: fixed;
-  inset: 0;
+/* ===== Desktop Experience (true 2-panel) ===== */
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 420px 1fr;
 }
 
-/* ===== Sheet (desktop defaults to sidebar; mobile defaults to bottom sheet) ===== */
-.sheet {
-  position: fixed;
-  z-index: 5;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(10px);
-  overflow: hidden;
+.panel {
+  height: 100%;
+  background: var(--panel-bg);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
-/* Desktop: left sidebar */
-@media (min-width: 769px) {
-  .sheet {
-    top: 14px;
-    left: 14px;
-    bottom: 14px;
-    width: min(420px, 92vw);
-    border-radius: var(--radius);
-  }
-
-  .sheet-handle,
-  .collapse-btn {
-    display: none;
-  }
+.map {
+  height: 100%;
 }
 
-/* Mobile: bottom sheet overlay */
-@media (max-width: 768px) {
-  .sheet {
-    left: 10px;
-    right: 10px;
-    bottom: calc(10px + env(safe-area-inset-bottom));
-    border-radius: var(--radius);
-    transition: height 220ms ease;
-  }
-
-  .sheet.collapsed { height: var(--sheet-collapsed); }
-  .sheet.expanded { height: var(--sheet-expanded); }
-}
-
-/* Handle (tap to expand) */
-.sheet-handle {
-  width: 100%;
-  background: transparent;
-  border: 0;
-  padding: 10px 0 4px;
-  cursor: pointer;
-}
-
-.grabber {
-  display: block;
-  width: 56px;
-  height: 5px;
-  border-radius: 999px;
-  margin: 0 auto;
-  background: rgba(29, 53, 87, 0.25);
+/* Desktop: hide mobile-only controls */
+.sheet-handle,
+.collapse-btn {
+  display: none;
 }
 
 /* Header */
-.sheet-header {
+.panel-header {
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(168,218,220,0.35), rgba(255,255,255,0));
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
-  padding: 10px 14px 10px 14px;
-  border-bottom: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(168,218,220,0.35), rgba(255,255,255,0));
+  gap: 12px;
 }
 
 .title {
@@ -123,19 +80,9 @@ html, body {
 }
 .sep { opacity: 0.55; }
 
-.collapse-btn {
-  border: 1px solid rgba(29,53,87,0.18);
-  background: rgba(241,250,238,0.8);
-  color: var(--navy);
-  padding: 8px 10px;
-  border-radius: 12px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
 /* Controls */
 .controls {
-  padding: 10px 14px 12px;
+  padding: 10px 16px 12px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -154,9 +101,8 @@ html, body {
   background: white;
 }
 
-/* Listings */
 .listings {
-  padding: 12px 12px 14px;
+  padding: 12px 12px 16px;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -170,7 +116,11 @@ html, body {
   margin-bottom: 12px;
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
 }
-
+.item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 35px rgba(0,0,0,0.10);
+  background: rgba(255,255,255,0.98);
+}
 .item.active {
   border-color: rgba(31,185,118,0.65);
   box-shadow: 0 16px 40px rgba(31,185,118,0.14);
@@ -210,17 +160,22 @@ html, body {
   font-size: 0.96rem;
   text-decoration: none;
   border: 1px solid transparent;
-  min-height: 44px; /* mobile tap target */
+  min-height: 44px;
 }
 
 .pill.join {
   background: var(--green);
   color: white;
 }
+.pill.join:hover { background: var(--navy); }
+
 .pill.email {
   background: rgba(69, 123, 157, 0.12);
   color: var(--blue);
   border-color: rgba(69, 123, 157, 0.25);
+}
+.pill.email:hover {
+  background: rgba(69, 123, 157, 0.18);
 }
 
 /* Popup polish */
@@ -230,7 +185,6 @@ html, body {
   box-shadow: 0 18px 40px rgba(0,0,0,0.18);
   padding: 12px 12px 10px !important;
 }
-
 .popup-title {
   margin: 0 0 6px 0;
   font-size: 1.05rem;
@@ -238,15 +192,68 @@ html, body {
   letter-spacing: -0.01em;
   color: var(--navy);
 }
-
 .popup-address {
   font-size: 0.96rem;
   opacity: 0.9;
   margin-bottom: 10px;
 }
-
 .popup-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+/* ===== Mobile Experience (full map + draggable bottom sheet) ===== */
+@media (max-width: 768px) {
+  .app {
+    display: block;
+  }
+
+  .map {
+    position: fixed;
+    inset: 0;
+    height: auto;
+  }
+
+  .panel {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    height: var(--sheet-h);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    background: var(--panel-bg);
+  }
+
+  .sheet-handle {
+    display: block;
+    padding: 10px 0 4px;
+    cursor: grab;
+    touch-action: none;
+  }
+  .sheet-handle:active { cursor: grabbing; }
+
+  .grabber {
+    width: 56px;
+    height: 5px;
+    border-radius: 999px;
+    margin: 0 auto;
+    background: rgba(29, 53, 87, 0.25);
+  }
+
+  .collapse-btn {
+    display: inline-flex;
+    border: 1px solid rgba(29,53,87,0.18);
+    background: rgba(241,250,238,0.8);
+    color: var(--navy);
+    padding: 8px 10px;
+    border-radius: 12px;
+    font-weight: 900;
+  }
+
+  /* on mobile we don’t need hover lift */
+  .item:hover { transform: none; box-shadow: none; }
 }
